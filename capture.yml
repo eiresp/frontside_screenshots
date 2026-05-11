@@ -1,0 +1,47 @@
+name: Capture frontsides
+
+on:
+  schedule:
+    # Tider i UTC. Norge er UTC+1 (vinter) eller UTC+2 (sommer).
+    # 07:00 norsk vintertid = 06:00 UTC, sommertid = 05:00 UTC.
+    # Vi kjører på begge for å treffe omtrent samme klokkeslett året rundt.
+    - cron: '0 5,6 * * *'    # ~07:00 norsk tid
+    - cron: '0 10,11 * * *'  # ~12:00 norsk tid
+    - cron: '0 18,19 * * *'  # ~20:00 norsk tid
+  workflow_dispatch:    # Lar deg trigge manuelt fra Actions-fanen
+
+permissions:
+  contents: write   # Trengs for å lage Release
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Playwright
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Run capture
+        run: python capture.py
+
+      - name: Compute timestamp
+        id: ts
+        run: echo "stamp=$(TZ=Europe/Oslo date '+%Y-%m-%d_%H%M')" >> $GITHUB_OUTPUT
+
+      - name: Upload screenshots as release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: capture-${{ steps.ts.outputs.stamp }}
+          name: Capture ${{ steps.ts.outputs.stamp }}
+          files: out/*.png
+          make_latest: false
