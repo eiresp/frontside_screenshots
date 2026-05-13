@@ -6,9 +6,9 @@ on:
     # Tider i UTC. Norge er UTC+1 (vinter) eller UTC+2 (sommer).
     # 07:00 norsk vintertid = 06:00 UTC, sommertid = 05:00 UTC.
     # Vi kjører på begge for å treffe omtrent samme klokkeslett året rundt.
-    - cron: '23 5,6 * * *'    # ~07:00 norsk tid
-    - cron: '23 10,11 * * *'  # ~12:00 norsk tid
-    - cron: '23 18,19 * * *'  # ~20:00 norsk tid
+    - cron: '23 4,5 * * *'
+    - cron: '23 9,10 * * *'
+    - cron: '23 17,18 * * *'
   workflow_dispatch:    # Lar deg trigge manuelt fra Actions-fanen
 
 permissions:
