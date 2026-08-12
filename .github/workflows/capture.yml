@@ -1,6 +1,5 @@
 # Capture frontsides 3x daily
 name: Capture frontsides
-
 on:
   schedule:
     # Tider i UTC. Norge er UTC+1 (vinter) eller UTC+2 (sommer).
@@ -10,39 +9,35 @@ on:
     - cron: '23 9,10 * * *'
     - cron: '23 17,18 * * *'
   workflow_dispatch:    # Lar deg trigge manuelt fra Actions-fanen
-
 permissions:
   contents: write   # Trengs for å lage Release
-
 jobs:
   capture:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install Playwright
         run: |
           pip install playwright
           python -m playwright install --with-deps chromium
-
       - name: Run capture
         run: python capture.py
-
       - name: Compute timestamp
         id: ts
         run: echo "stamp=$(TZ=Europe/Oslo date '+%Y-%m-%d_%H%M')" >> $GITHUB_OUTPUT
-
-      - name: Upload screenshots as release
+      - name: Upload artifacts as release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: capture-${{ steps.ts.outputs.stamp }}
           name: Capture ${{ steps.ts.outputs.stamp }}
-          files: out/*.png
+          files: |
+            out/*.png
+            out/*.html
+            out/*_links.json
           make_latest: false
