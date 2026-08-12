@@ -47,7 +47,6 @@ SITES = {
     'budsti': 'https://www.budstikka.no',
     'dramti': 'https://www.dt.no',
     'frblad': 'https://www.f-b.no',
-    'gjenga': 'https://www.gjengangeren.no',
     'hamarb': 'https://www.h-a.no',
     'h_avis': 'https://www.h-avis.no',
     'nrdlys': 'https://www.nordlys.no',
