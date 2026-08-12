@@ -1,6 +1,8 @@
-"""Tar fullside-screenshots av berlingske.dk og aftenposten.no.
+"""Tar fullside-screenshots, HTML og lenker fra Amedia-fronter.
 Lagres i en lokal mappe `out/`. GitHub Actions tar seg av opplastingen."""
 import asyncio
+import csv
+import json
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -9,182 +11,194 @@ from playwright.async_api import async_playwright
 
 OUTPUT_DIR = Path('out')
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+RUNLOG = OUTPUT_DIR / 'runlog.csv'
 
 TZ = ZoneInfo('Europe/Oslo')
+CONCURRENCY = int(os.environ.get('CONCURRENCY', '3'))
 
 USER_AGENT = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 )
 
-SITES = [
-    {
-        'name': 'berlingske',
-        'url':  'https://www.berlingske.dk/',
-        'consent_texts': [
-            'Acceptér alle', 'Accepter alle', 'Accepter Alle',
-            'Acceptér alle og luk', 'Accepter alle og luk',
-            'Godkend alle', 'Tillad alle', 'OK for mig', 'Jeg accepterer',
-        ],
-        'consent_css': [
-            'button.message-button',
-            'button[title*="ccept" i]',
-            'button[aria-label*="ccept" i]',
-        ],
-        'iframe_url_hint': ['sourcepoint', 'consensu', 'cmp'],
-    },
-    {
-        'name': 'aftenposten',
-        'url':  'https://www.aftenposten.no/',
-        'consent_texts': [
-            'Godta alle', 'Aksepter alle', 'Godta', 'Godkjenn alle', 'Godkjenn',
-            'Tillat alle',
-        ],
-        'consent_css': [
-            'button.message-button',
-            'button[title*="odta" i]',
-            'button[aria-label*="odta" i]',
-            'button[data-testid*="accept" i]',
-        ],
-        'iframe_url_hint': ['sourcepoint', 'consensu', 'cmp', 'schibsted'],
-    },
+# Annonse- og trackingdomener som blokkeres for å redusere lastetid
+BLOCK_PATTERNS = [
+    'doubleclick.net', 'googletagmanager', 'google-analytics',
+    'facebook.com/tr', 'facebook.net', 'adservice', 'adnxs.com',
+    'scorecardresearch', 'chartbeat', 'hotjar', 'segment.io',
+    'amplitude', 'mixpanel', 'taboola', 'outbrain',
 ]
 
+# Amedia bruker samme consent på alle sider - én liste er nok
+CONSENT_SELECTORS = [
+    'button:has-text("Godta alle")',
+    'button:has-text("Godta")',
+    'button:has-text("Aksepter alle")',
+    'button:has-text("Aksepter")',
+    'button:has-text("Tillat alle")',
+    '[aria-label*="onsent"] button',
+    '[title*="onsent"] button',
+]
 
-async def try_click(scope, by_text, by_css):
-    for txt in by_text:
+# site_key matcher konvensjonen i BigQuery
+SITES = {
+    'avnord': 'https://www.an.no',
+    'bergen': 'https://www.ba.no',
+    'budsti': 'https://www.budstikka.no',
+    'dramti': 'https://www.dt.no',
+    'frblad': 'https://www.f-b.no',
+    'gjenga': 'https://www.gjengangeren.no',
+    'hamarb': 'https://www.h-a.no',
+    'h_avis': 'https://www.h-avis.no',
+    'nrdlys': 'https://www.nordlys.no',
+    'opplan': 'https://www.oa.no',
+    'rombla': 'https://www.rb.no',
+    'telema': 'https://www.ta.no',
+    'tonsbb': 'https://www.tb.no',
+}
+
+
+async def block_heavy(route):
+    if any(p in route.request.url for p in BLOCK_PATTERNS):
+        await route.abort()
+    else:
+        await route.continue_()
+
+
+async def dismiss_consent(page):
+    for sel in CONSENT_SELECTORS:
         try:
-            btn = scope.get_by_role('button', name=txt)
-            if await btn.count() > 0 and await btn.first.is_visible(timeout=400):
-                await btn.first.click(timeout=2000)
-                return f'role-button:{txt}'
+            await page.locator(sel).first.click(timeout=1500)
+            await page.wait_for_timeout(500)
+            return sel
         except Exception:
-            pass
-    for css in by_css:
-        try:
-            loc = scope.locator(css)
-            if await loc.count() > 0 and await loc.first.is_visible(timeout=400):
-                txt = (await loc.first.inner_text(timeout=500)).strip().lower()
-                if any(w in txt for w in ['accept', 'godta', 'godkjen',
-                                          'tillat', 'godkend', 'ok ', 'alle']):
-                    await loc.first.click(timeout=2000)
-                    return f'css:{css}={txt[:30]}'
-        except Exception:
-            pass
+            continue
     return None
-
-
-async def dismiss_consent(page, site):
-    log = []
-    await page.wait_for_timeout(3500)
-    res = await try_click(page, site['consent_texts'], site['consent_css'])
-    if res:
-        log.append(f'main:{res}')
-        await page.wait_for_timeout(1500)
-        return ' + '.join(log)
-
-    cmp_frames = [
-        f for f in page.frames
-        if f != page.main_frame and any(h in (f.url or '').lower() for h in site['iframe_url_hint'])
-    ]
-    if not cmp_frames:
-        cmp_frames = [f for f in page.frames if f != page.main_frame]
-    log.append(f'iframes-funnet:{len(cmp_frames)}')
-    for frame in cmp_frames:
-        res = await try_click(frame, site['consent_texts'], site['consent_css'])
-        if res:
-            log.append(f'iframe:{res}')
-            await page.wait_for_timeout(1500)
-            return ' + '.join(log)
-
-    try:
-        clicked = await page.evaluate("""
-            (texts) => {
-                const allButtons = [
-                    ...document.querySelectorAll('button'),
-                    ...document.querySelectorAll('[role="button"]'),
-                    ...document.querySelectorAll('a.btn'),
-                ];
-                for (const btn of allButtons) {
-                    const t = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                    for (const txt of texts) {
-                        if (t.includes(txt.toLowerCase())) {
-                            btn.click();
-                            return t.slice(0, 40);
-                        }
-                    }
-                }
-                return null;
-            }
-        """, site['consent_texts'])
-        if clicked:
-            log.append(f'js:{clicked}')
-            await page.wait_for_timeout(1500)
-            return ' + '.join(log)
-    except Exception as e:
-        log.append(f'js-error:{type(e).__name__}')
-
-    return ' + '.join(log) + ' [INGEN KLIKK]'
 
 
 async def trigger_lazy_loading(page):
     await page.evaluate("""
         async () => {
-            const totalHeight = document.body.scrollHeight;
-            for (let y = 0; y < totalHeight; y += 600) {
+            const step = 1500;
+            const delay = 250;
+            for (let y = 0; y < 40000; y += step) {
                 window.scrollTo(0, y);
-                await new Promise(r => setTimeout(r, 80));
+                await new Promise(r => setTimeout(r, delay));
+                if (y > document.documentElement.scrollHeight) break;
             }
             window.scrollTo(0, 0);
+            await new Promise(r => setTimeout(r, 1000));
         }
     """)
-    await page.wait_for_timeout(2000)
 
 
-async def capture_site(playwright, site, timestamp):
-    out_path = OUTPUT_DIR / f"{site['name']}_{timestamp}.png"
-    print(f"\n  === {site['name']} ===")
-    browser = await playwright.chromium.launch(
-        headless=True, args=['--no-sandbox', '--disable-dev-shm-usage'],
+async def extract_links(page):
+    return await page.eval_on_selector_all(
+        "a[href]",
+        """els => els.map(e => {
+            const rect = e.getBoundingClientRect();
+            return {
+                href: e.href,
+                text: (e.innerText || '').trim().slice(0, 200),
+                y: Math.round(rect.top + window.scrollY),
+                x: Math.round(rect.left)
+            };
+        })"""
     )
-    context = await browser.new_context(
-        viewport={'width': 1440, 'height': 900},
-        device_scale_factor=1,
-        user_agent=USER_AGENT,
-        locale='nb-NO',
-        timezone_id='Europe/Oslo',
-    )
-    page = await context.new_page()
+
+
+async def capture_site(browser, site_key, url, timestamp):
+    stem = OUTPUT_DIR / f"{site_key}_{timestamp}"
+    print(f"\n  === {site_key} ===")
+    result = {
+        'timestamp': datetime.now(TZ).isoformat(timespec='seconds'),
+        'site_key': site_key,
+        'url': url,
+        'status': 'ok',
+        'n_links': 0,
+        'consent_selector': '',
+        'error': '',
+    }
+    context = None
     try:
-        print(f"  -> goto {site['url']}")
-        await page.goto(site['url'], wait_until='domcontentloaded', timeout=45000)
-        title = await page.title()
-        print(f"  -> tittel: {title[:80]}")
+        context = await browser.new_context(
+            viewport={'width': 1440, 'height': 900},
+            device_scale_factor=1,
+            user_agent=USER_AGENT,
+            locale='nb-NO',
+            timezone_id='Europe/Oslo',
+        )
+        await context.route('**/*', block_heavy)
+        page = await context.new_page()
+
+        print(f"  -> goto {url}")
+        await page.goto(url, wait_until='load', timeout=45000)
         await page.wait_for_timeout(2000)
-        consent = await dismiss_consent(page, site)
-        print(f"  -> consent: {consent}")
+
+        matched = await dismiss_consent(page)
+        result['consent_selector'] = matched or ''
+        print(f"  -> consent: {matched or 'ingen match'}")
+
         await page.wait_for_timeout(2500)
         await trigger_lazy_loading(page)
-        await page.screenshot(path=str(out_path), full_page=True, timeout=120000)
-        size_mb = out_path.stat().st_size / 1024 / 1024
-        print(f"  -> OK   {out_path.name}  ({size_mb:.1f} MB)")
-        return True
+
+        await page.screenshot(path=str(stem) + '.png', full_page=True, timeout=120000)
+        Path(str(stem) + '.html').write_text(await page.content(), encoding='utf-8')
+
+        links = await extract_links(page)
+        Path(str(stem) + '_links.json').write_text(
+            json.dumps(links, ensure_ascii=False, indent=2),
+            encoding='utf-8'
+        )
+        result['n_links'] = len(links)
+
+        png_size_mb = Path(str(stem) + '.png').stat().st_size / 1024 / 1024
+        print(f"  -> OK   {site_key}  ({png_size_mb:.1f} MB, {len(links)} lenker)")
     except Exception as e:
-        print(f"  -> FEIL  {type(e).__name__}: {e}")
-        return False
+        result['status'] = 'error'
+        result['error'] = f"{type(e).__name__}: {str(e)[:200]}"
+        print(f"  -> FEIL  {result['error']}")
     finally:
-        await context.close()
-        await browser.close()
+        if context is not None:
+            try:
+                await context.close()
+            except Exception:
+                pass
+    return result
+
+
+def append_log(row, logfile):
+    new_file = not logfile.exists()
+    with logfile.open('a', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+        if new_file:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 async def main():
     timestamp = datetime.now(TZ).strftime('%Y-%m-%d_%H%M')
-    print(f'[{timestamp}] Starter')
-    success = 0
+    print(f'[{timestamp}] Starter - {len(SITES)} aviser, {CONCURRENCY} parallelt')
+
     async with async_playwright() as p:
-        for site in SITES:
-            if await capture_site(p, site, timestamp):
-                success += 1
+        browser = await p.chromium.launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-dev-shm-usage'],
+        )
+        sem = asyncio.Semaphore(CONCURRENCY)
+
+        async def bounded(site_key, url):
+            async with sem:
+                return await capture_site(browser, site_key, url, timestamp)
+
+        tasks = [bounded(k, u) for k, u in SITES.items()]
+        results = await asyncio.gather(*tasks)
+        await browser.close()
+
+    for r in results:
+        append_log(r, RUNLOG)
+
+    success = sum(1 for r in results if r['status'] == 'ok')
     print(f'\n[{timestamp}] Ferdig. {success}/{len(SITES)} vellykket.')
     if success == 0:
         raise SystemExit(1)
