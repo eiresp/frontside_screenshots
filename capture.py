@@ -57,6 +57,7 @@ SITES = {
     'gagaga': 'https://www.rastavanger.no',
     'nidaro': 'https://www.nidaros.no',
     'avisao': 'https://www.avisaoslo.no',
+    'noblad': 'https://www.noblad.no',
 }
 
 
