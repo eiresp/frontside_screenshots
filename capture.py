@@ -53,7 +53,10 @@ SITES = {
     'opplan': 'https://www.oa.no',
     'rombla': 'https://www.rb.no',
     'telema': 'https://www.ta.no',
-    'tonsbb': 'https://www.tb.no',
+    'tonsbb': 'https://www.tb.no',    
+    'gagaga': 'https://www.rastavanger.no',
+    'nidaro': 'https://www.nidaros.no',
+    'avisao': 'https://www.avisaoslo.no',
 }
 
 
