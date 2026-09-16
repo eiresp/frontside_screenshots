@@ -58,6 +58,7 @@ SITES = {
     'nidaro': 'https://www.nidaros.no',
     'avisao': 'https://www.avisaoslo.no',
     'noblad': 'https://www.noblad.no',
+    'smaale': 'https://www.smaalenene.no',
 }
 
 
