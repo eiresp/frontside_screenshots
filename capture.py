@@ -1,4 +1,4 @@
-"""Tar fullside-screenshots, HTML og lenker fra Amedia-fronter.
+"""Tar fullside-screenshots, HTML og lenker fra utvalgte fronter.
 Lagres i en lokal mappe `out/`. GitHub Actions tar seg av opplastingen."""
 import asyncio
 import csv
@@ -29,7 +29,7 @@ BLOCK_PATTERNS = [
     'amplitude', 'mixpanel', 'taboola', 'outbrain',
 ]
 
-# Amedia bruker samme consent på alle sider - én liste er nok
+# Norsk consent - fungerer for både Amedia og Polaris
 CONSENT_SELECTORS = [
     'button:has-text("Godta alle")',
     'button:has-text("Godta")',
@@ -40,26 +40,29 @@ CONSENT_SELECTORS = [
     '[title*="onsent"] button',
 ]
 
-# site_key matcher konvensjonen i BigQuery
-SITES = {
+# Amedia-aviser. site_key matcher konvensjonen i BigQuery.
+AMEDIA_SITES = {
     'avnord': 'https://www.an.no',
     'bergen': 'https://www.ba.no',
     'budsti': 'https://www.budstikka.no',
     'dramti': 'https://www.dt.no',
     'frblad': 'https://www.f-b.no',
+    'gjenga': 'https://www.gjengangeren.no',
     'hamarb': 'https://www.h-a.no',
     'h_avis': 'https://www.h-avis.no',
     'nrdlys': 'https://www.nordlys.no',
     'opplan': 'https://www.oa.no',
     'rombla': 'https://www.rb.no',
     'telema': 'https://www.ta.no',
-    'tonsbb': 'https://www.tb.no',    
-    'gagaga': 'https://www.rastavanger.no',
-    'nidaro': 'https://www.nidaros.no',
-    'avisao': 'https://www.avisaoslo.no',
-    'noblad': 'https://www.noblad.no',
-    'smaale': 'https://www.smaalenene.no',
+    'tonsbb': 'https://www.tb.no',
 }
+
+# Polaris-aviser (konkurrent)
+POLARIS_SITES = {
+    'driva': 'https://www.driva.no',
+}
+
+SITES = {**AMEDIA_SITES, **POLARIS_SITES}
 
 
 async def block_heavy(route):
