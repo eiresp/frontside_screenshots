@@ -55,6 +55,7 @@ AMEDIA_SITES = {
     'rombla': 'https://www.rb.no',
     'telema': 'https://www.ta.no',
     'tonsbb': 'https://www.tb.no',
+    'auraav': 'https://www.auraavis.no',
 }
 
 # Polaris-aviser (konkurrent)
