@@ -57,6 +57,7 @@ AMEDIA_SITES = {
     'telema': 'https://www.ta.no',
     'tonsbb': 'https://www.tb.no',
     'auraav': 'https://www.auraavis.no',
+    'sognav': 'https://www.sognavis.no',
 }
 
 SITES = AMEDIA_SITES
