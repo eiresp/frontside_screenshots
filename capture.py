@@ -29,7 +29,7 @@ BLOCK_PATTERNS = [
     'amplitude', 'mixpanel', 'taboola', 'outbrain',
 ]
 
-# Norsk consent - fungerer for både Amedia og Polaris
+# Norsk consent for Amedia-avisene
 CONSENT_SELECTORS = [
     'button:has-text("Godta alle")',
     'button:has-text("Godta")',
@@ -52,18 +52,14 @@ AMEDIA_SITES = {
     'h_avis': 'https://www.h-avis.no',
     'nrdlys': 'https://www.nordlys.no',
     'opplan': 'https://www.oa.no',
+    'ostpos': 'https://www.op.no',
     'rombla': 'https://www.rb.no',
     'telema': 'https://www.ta.no',
     'tonsbb': 'https://www.tb.no',
     'auraav': 'https://www.auraavis.no',
 }
 
-# Polaris-aviser (konkurrent)
-POLARIS_SITES = {
-    'driva': 'https://www.driva.no',
-}
-
-SITES = {**AMEDIA_SITES, **POLARIS_SITES}
+SITES = AMEDIA_SITES
 
 
 async def block_heavy(route):
